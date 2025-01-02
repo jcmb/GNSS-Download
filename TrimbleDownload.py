@@ -15,7 +15,7 @@ from KMZ_Decode import parse_kmz
 def get_args():
 
     parser = argparse.ArgumentParser(
-        fromfile_prefix_chars="@", description="Remote.It Account Summary."
+        fromfile_prefix_chars="@", description="Trimble GNSS Download."
     )
 
     parser.add_argument("IP", help="GNSS receiver IP ")
