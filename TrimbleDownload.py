@@ -88,6 +88,7 @@ def get_args():
     )
     parser.add_argument("--DryRun", help="DryRun, do not delete.", action="store_true")
     parser.add_argument("--Verbose", "-V", help="Verbose", action="store_true")
+    parser.add_argument("--ARP", "-A", help="ARP_Offset to be applied to CSV Files", type=float, default=0.0)
     parser.add_argument(
         "--Tell", "-T", help="Show Settings in use.", action="store_true"
     )
@@ -100,6 +101,7 @@ def get_args():
         sys.stderr.write("Format:    {}\n".format(parser.Format))
         sys.stderr.write("Base:      {}\n".format(parser.Base))
         sys.stderr.write("Output:    {}\n".format(parser.Output))
+
         sys.stderr.write("RINEX V:   {}\n".format(parser.RINEX))
         sys.stderr.write("Max:       {}\n".format(parser.Max))
         sys.stderr.write("Recursive: {}\n".format(parser.Recursive))
@@ -246,7 +248,7 @@ def download_file(
             NoRename=NoRename,
         )
     elif outputFormat == GNSSFormat.KML:
-        download_url += "?format=KML-Lines"
+        download_url += "?format=KMZ-Lines"
         filepath = filepathFrom_content_disposition(
             download_url,
             download_dir,
@@ -428,26 +430,26 @@ def main():
                     NoRename=args["NoRename"],
                 )
                 #            print(downloaded_file)
-                if outputFormat == GNSSFormat.CSV:
-                    #                print (downloaded_file+".csv")
-                    #                print (os.path.isfile(downloaded_file+".csv"))
-                    if args["Clobber"] or (
-                        not os.path.isfile(downloaded_file + ".csv")
-                    ):
-                        if verbose:
-                            print(
-                                "Downloaded File: {}. Converting to CSV {}, ".format(
-                                    downloaded_file, downloaded_file + ".csv"
-                                ),
-                                end="",
-                            )
-                        parse_kmz(downloaded_file, False)
-                        if verbose:
-                            print("Converted.")
-                    pass
             except:
                 print("Downloading aborted")
                 break
+            if outputFormat == GNSSFormat.CSV:
+                #                print (downloaded_file+".csv")
+                #                print (os.path.isfile(downloaded_file+".csv"))
+                if args["Clobber"] or (
+                    not os.path.isfile(downloaded_file + ".csv")
+                ):
+                    if verbose:
+                        print(
+                            "Downloaded File: {}. Converting to CSV {}, ".format(
+                                downloaded_file, downloaded_file + ".csv"
+                            ),
+                            end="",
+                        )
+                    parse_kmz(downloaded_file, False,args["ARP"])
+                    if verbose:
+                        print("Converted.")
+                pass
             numberDownloads += 1
     else:
         print("No .T02 or .T04 files found.")
