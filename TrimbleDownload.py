@@ -93,29 +93,36 @@ def get_args():
         "--Tell", "-T", help="Show Settings in use.", action="store_true"
     )
 
-    parser = parser.parse_args()
+    parser.add_argument("--User", default="admin", help="User name for the device. Required for delete")
+    parser.add_argument("--Password", help="Password for the device. Required for delete")
 
-    if parser.Tell:
-        sys.stderr.write("IP:        {}\n".format(parser.IP))
-        sys.stderr.write("Port:      {}\n".format(parser.Port))
-        sys.stderr.write("Format:    {}\n".format(parser.Format))
-        sys.stderr.write("Base:      {}\n".format(parser.Base))
-        sys.stderr.write("Output:    {}\n".format(parser.Output))
 
-        sys.stderr.write("RINEX V:   {}\n".format(parser.RINEX))
-        sys.stderr.write("Max:       {}\n".format(parser.Max))
-        sys.stderr.write("Recursive: {}\n".format(parser.Recursive))
-        sys.stderr.write("Delete:    {}\n".format(parser.Delete))
-        sys.stderr.write("Clobber:   {}\n".format(parser.Clobber))
-        sys.stderr.write("NoRename:  {}\n".format(parser.NoRename))
-        sys.stderr.write("Quite:     {}\n".format(parser.Quite))
-        sys.stderr.write("DryRun:    {}\n".format(parser.DryRun))
-        sys.stderr.write("Verbose:   {}\n".format(parser.Verbose))
+    args = parser.parse_args()
+
+    if args.Tell:
+        sys.stderr.write("IP:        {}\n".format(args.IP))
+        sys.stderr.write("Port:      {}\n".format(args.Port))
+        sys.stderr.write("Format:    {}\n".format(args.Format))
+        sys.stderr.write("Base:      {}\n".format(args.Base))
+        sys.stderr.write("Output:    {}\n".format(args.Output))
+
+        sys.stderr.write("RINEX V:   {}\n".format(args.RINEX))
+        sys.stderr.write("Max:       {}\n".format(args.Max))
+        sys.stderr.write("Recursive: {}\n".format(args.Recursive))
+        sys.stderr.write("Clobber:   {}\n".format(args.Clobber))
+        sys.stderr.write("NoRename:  {}\n".format(args.NoRename))
+        sys.stderr.write("Quite:     {}\n".format(args.Quite))
+        sys.stderr.write("DryRun:    {}\n".format(args.DryRun))
+        sys.stderr.write("Verbose:   {}\n".format(args.Verbose))
+        sys.stderr.write("")
+        sys.stderr.write("Delete:    {}\n".format(args.Delete))
+        sys.stderr.write("User:      {}\n".format(args.User))
+        sys.stderr.write("Password:  {}\n".format(args.Password))
         sys.stderr.write("\n")
 
     # http://172.27.0.42:83/xml/dynamic/fileManager.xml?deleteFiles=/Internal&f0=R2_R750___202409301600.T04&f1=R2_R750___202409301400.T04
 
-    return vars(parser)
+    return vars(args)
 
 
 class GNSSFormat(Enum):
@@ -124,6 +131,7 @@ class GNSSFormat(Enum):
     KML = ("KML", "Google Earth (line)")
     KMP = ("KMP", "Google Earth (line & points)")
     CSV = ("CSV", "CSV Generated from the Google Earth (line & points) file")
+    TRAJ = ("TRAJ", "CSV in Trajectory format Generated from the Google Earth (line & points) file")
     RINEX = ("RINEX", "RINEX, Observations File.")
     RINEXZ = ("RINEXZ", "RINEX, All Data Zip File.")
     T0X = ("T0X", "Trimble T02 or T04 Format")
@@ -203,6 +211,9 @@ def download_file(
     skip=False,
     progress=False,
     NoRename=False,
+    Delete=False,
+    User=None,
+    Password=None
 ):
     """Download a file from the URL to the specified directory."""
     filepath = os.path.join(download_dir, url.split("/")[-1])
@@ -328,6 +339,29 @@ def download_file(
                 raise RuntimeError("Could not download file")
             else:
                 print("")
+    if Delete:
+        if url.startswith('/download'):
+            url=url[len('/download'):]
+        directory, filename = url.rsplit('/', 1)
+
+        delete_URL = ("{}/xml/dynamic/fileManager.xml?deleteFiles={}&f0={}".format(server,directory,filename))
+        if verbose:
+            if User==None:
+                print("Deleting file {} using {} without auth".format(filename,delete_URL))
+            else:
+                print("Deleting file {} using {} with auth".format(filename,delete_URL))
+        try:
+            if User==None:
+                response = requests.get(delete_URL)
+            else:
+                response = requests.get(delete_URL,auth=(User, Password))
+
+            response.raise_for_status()  # Raise an error for bad responses (4xx, 5xx)
+            print(response.text)
+        except:
+            raise SystemExit(f"ERROR: Connect to {server} to delete Failed\n")
+
+
     return filepath
 
 
@@ -387,6 +421,14 @@ def main():
     progress = not args["Quite"]
     if is_stdout_redirected():
         progress = False
+
+    if args["Delete"]:
+#        if not args["User"]:
+#            sys.exit("User must be provided for delete")
+#        if not args["Password"]:
+#            sys.exit("Password must be provided for delete")
+        pass
+
     outputFormat = GNSSFormat.from_string(args["Format"])
     #    pprint(args)
 
@@ -400,11 +442,13 @@ def main():
     if verbose:
         print(f"Fetching files from {directory_url} to {download_dir}")
 
+
     # Get file URLs
     file_urls = get_files_from_directory(
         server, directory_url, args["Recursive"], verbose
     )
 
+#    pprint(file_urls)
     numberDownloads = 0
     maxDownloads = args["Max"]
 
@@ -428,11 +472,15 @@ def main():
                     skip=not args["Clobber"],
                     progress=progress,
                     NoRename=args["NoRename"],
+                    Delete=args["Delete"],
+                    User=args["User"],
+                    Password=args["Password"],
                 )
                 #            print(downloaded_file)
             except:
                 print("Downloading aborted")
                 break
+
             if outputFormat == GNSSFormat.CSV:
                 #                print (downloaded_file+".csv")
                 #                print (os.path.isfile(downloaded_file+".csv"))
@@ -446,7 +494,24 @@ def main():
                             ),
                             end="",
                         )
-                    parse_kmz(downloaded_file, False,args["ARP"])
+                    parse_kmz(downloaded_file, False,args["ARP"],trajectory=False)
+                    if verbose:
+                        print("Converted.")
+                pass
+            elif outputFormat == GNSSFormat.TRAJ:
+                #                print (downloaded_file+".csv")
+                #                print (os.path.isfile(downloaded_file+".csv"))
+                if args["Clobber"] or (
+                    not os.path.isfile(downloaded_file + ".csv")
+                ):
+                    if verbose:
+                        print(
+                            "Downloaded File: {}. Converting to CSV {}, ".format(
+                                downloaded_file, downloaded_file + ".csv"
+                            ),
+                            end="",
+                        )
+                    parse_kmz(downloaded_file, False,args["ARP"],trajectory=True)
                     if verbose:
                         print("Converted.")
                 pass
