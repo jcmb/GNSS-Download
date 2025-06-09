@@ -13,6 +13,22 @@ import csv
 
 from bs4 import BeautifulSoup
 
+keyRemap= {
+    "Time" : "GPS Week Seconds",
+    "Week" : "GPS Week Number",
+    "Type" : "fixType",
+    "Mode" : "fix",
+    "PDOP" : "PDOP",
+    "Corr Age" : "Corr Age",
+    "Used"  : "satellites",
+    "Track" : "tracked",
+    "East"  : "East Sigma",
+    "North" : "North Sigma",
+    "Hgt"   : "Up Sigma",
+    "Velocity" : "Velocity",
+    "Track Angle" : "Heading"
+    }
+
 
 def get_args():
 
@@ -29,16 +45,18 @@ def get_args():
         action="store_true",
     )
     parser.add_argument("--ARP", "-A", help="ARP_Offset to be applied", type=float, default=0.0)
+    parser.add_argument("--Trajectory", help="Output in trajectory format", type=float, default=0.0)
     parser.add_argument("--Verbose", "-V", help="Verbose", action="store_true")
     parser.add_argument("--Tell", "-T", help="Show Settings", action="store_true")
 
     parser = parser.parse_args()
 
     if parser.Tell:
-        sys.stderr.write("KMZ:     {}\n".format(parser.KMZ_File))
-        sys.stderr.write("ARP:     {}\n".format(parser.ARP))
-        sys.stderr.write("Save:    {}\n".format(parser.Save))
-        sys.stderr.write("Verbose: {}\n".format(parser.Verbose))
+        sys.stderr.write("KMZ:        {}\n".format(parser.KMZ_File))
+        sys.stderr.write("Trajectory: {}\n".format(parser.Trajectory))
+        sys.stderr.write("ARP:        {}\n".format(parser.ARP))
+        sys.stderr.write("Save:       {}\n".format(parser.Save))
+        sys.stderr.write("Verbose:    {}\n".format(parser.Verbose))
 
     if not os.path.isfile(parser.KMZ_File):
         print(
@@ -50,6 +68,7 @@ def get_args():
 
 
 def parse_table(html):
+    global keyRemap
     soup = BeautifulSoup(html, "html.parser")
 
     # Find all rows
@@ -72,7 +91,6 @@ def parse_table(html):
 #            pprint(cells)
 #            print(value)
             if key in [
-                "UTC",
                 "Time",
                 "Week",
                 "Type",
@@ -88,16 +106,18 @@ def parse_table(html):
                 "Track Angle"
 
             ]:
-                if key == "Track":
-                    key = "Tracked"
-                elif key =="East":
-                    key="East Sigma"
-                elif key == "North":
-                    key="North Sigma"
-                if not key in data:  # Work around that Hgt is used twice
-                    data[key] = value
+                remapped=keyRemap[key]
+#                print(key,",", remapped)
+                if not remapped in data:  # Work around that Hgt is used twice
+                    data[remapped] = value
                 else:
                     data["Up Sigma"] = value
+            elif key == "UTC" :
+                date, time = value.split("T")
+                time = time.rstrip("Z")  # Remove trailing 'Z'
+                data["Date"]=date
+                data["Time"]=time
+#                print("DT", date,time)
 
     if "Hgt" in data:
         if data["Hgt"].endswith("m"):
@@ -105,7 +125,7 @@ def parse_table(html):
 
     if "Corr Age" in data:
         if data["Corr Age"].endswith("s"):
-            data["Corr Age"] = data["East Sigma"][:-1]  # Remove m
+            data["Corr Age"] = data["Corr Age"][:-1]  # Remove m
 
     if "East Sigma" in data:
         if data["East Sigma"].endswith("m"):
@@ -119,29 +139,34 @@ def parse_table(html):
         if data["Up Sigma"].endswith("m"):
             data["Up Sigma"] = data["Up Sigma"][:-1]  # Remove m
 
-    if "Track Angle" in data:
-        if data["Track Angle"].endswith("°"):
-            data["Track Angle"] = data["Track Angle"][:-1]  # Remove m
+    if "Heading" in data:
+        if data["Heading"].endswith("°"):
+            data["Heading"] = data["Heading"][:-1]  # Remove °
 
     if "Velocity" in data:
         if data["Velocity"].endswith("km/h"):
             data["Velocity"] = data["Velocity"][:-4]  # Remove m
 
-    if "Time" in data:
-        if data["Time"].endswith(" secs"):
-            data["Time"] = data["Time"][:-5]  # Remove " secs"
+    if "GPS Week Seconds" in data:
+        if data["GPS Week Seconds"].endswith(" secs"):
+            data["GPS Week Seconds"] = data["GPS Week Seconds"][:-5]  # Remove " secs"
+#    pprint(data)
     return data
 
 
-def parse_kmz(kmz_file, save_KML:bool, ARP_Offset:float=400.0, useKMZ:bool=True) -> None:
+def parse_kmz(kmz_file, save_KML:bool, ARP_Offset:float=400.0, useKMZ:bool=True, trajectory:bool=False) -> None:
 
     if not isinstance(save_KML, bool):
         raise TypeError(f"save_KML must be a bool, but got {type(save_KML).__name__}")
 
     if not (isinstance(ARP_Offset, float)):
             raise TypeError(f"ARP_Offset must be a float or int, but got {type(ARP_Offset).__name__}")
+
     if not isinstance(useKMZ, bool):
         raise TypeError(f"save_KML must be a bool, but got {type(useKMZ).__name__}")
+
+    if not isinstance(trajectory, bool):
+        raise TypeError(f"trajectory must be a bool, but got {type(trajectory).__name__}")
 
     # If Use KMZ is True then the CSV is based on the KMZ filename, which only works if there is a
     # Single KML file in the KMZ file. Which there is for Trimble KMZ files today.
@@ -170,27 +195,42 @@ def parse_kmz(kmz_file, save_KML:bool, ARP_Offset:float=400.0, useKMZ:bool=True)
             else:
                 csvfile = open(KMZ_dir + kml_file_name + ".csv", "w", newline="")
 
+            trajectory_fieldnames = [
+                "GPS Week Seconds",
+                "Latitude",
+                "Longitude",
+                "Height",
+                "fix"]
+
             fieldnames = [
+                "Date",
                 "Time",
-                "Lat",
-                "Lon",
-                "Hgt",
-                "Type",
+                "GPS Week Number",
+                "GPS Week Seconds",
+                "UTC Offset",
+                "fix",
+                "fixType",
+                "fixInfo",
+                "satellites",
+                "tracked",
+                "HDOP",
+                "VDOP",
+                "PDOP",
+                "Latitude",
+                "Longitude",
+                "Height",
+                "MSL separation",
+                "Velocity",
+                "Heading",
                 "East Sigma",
                 "North Sigma",
                 "Up Sigma",
-                "Mode",
-                "PDOP",
-                "Tracked",
-                "Used",
-                "Corr Age",
-                "Track Angle",
-                "Velocity",
-                "Week",
-                "UTC"
+                "Corr Age"
             ]
-#            writer = csv.DictWriter(csvfile, fieldnames=fieldnames,extrasaction='ignore')
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if trajectory :
+                writer = csv.DictWriter(csvfile, fieldnames=trajectory_fieldnames,extrasaction='ignore')
+            else:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
             # Step 3: Parse KML content
@@ -222,9 +262,9 @@ def parse_kmz(kmz_file, save_KML:bool, ARP_Offset:float=400.0, useKMZ:bool=True)
                         coordinates = coordinates.text.strip()
                         coordinates = coordinates.split(',')
                         if len (coordinates) == 3 :
-                            details["Lat"] =coordinates[0]
-                            details["Lon"] =coordinates[1]
-                            details["Hgt"] =float(coordinates[2]) - ARP_Offset
+                            details["Latitude"] =coordinates[0]
+                            details["Longitude"] =coordinates[1]
+                            details["Height"] =float(coordinates[2]) - ARP_Offset
 
 
                 writer.writerow(details)
