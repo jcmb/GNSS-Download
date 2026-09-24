@@ -112,3 +112,82 @@ Converts a Trimble KMZ file, with Points and Lines, into a CSV File of the follo
  10. 'Tracked' : Number of SV's Tracked
  11. 'Used': Number of SV's used in the Postion
  12. 'Week : GPS Week
+
+
+### T0x_Combine.py
+
+```
+usage: T0x_Combine.py [-h] [--Recursive] [--CrossDay] [--Clobber] [--DryRun] [--Verbose] [--Tell]
+                      Input [Input ...]
+
+Combine Trimble T02/T04 files by base name and time order.
+
+positional arguments:
+  Input                 T02/T04 files and/or directories to process
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --Recursive, -R       Search directories recursively for T02/T04 files
+  --CrossDay, -X        Combine files across days within the same month
+  --Clobber, -C         Overwrite existing combined output files
+  --DryRun              Show what would be combined without writing files
+  --Verbose, -V         Verbose
+  --Tell, -T            Show settings
+```
+
+Combines Trimble T02 or T04 files that share the same base name into a single file,
+ordered by the time encoded in the filename.
+
+Filenames support two timestamp styles before the extension:
+
+* `YYYYMMDDHHMM` — e.g. `VRS-EB81__202504251200.T04` (last four digits are `HHMM`)
+* `YYYYMMDDHH` — e.g. `Cessnock-Base_2026092323.T04` (last two digits are the hour `HH`)
+
+In both cases the two digits before the time are the day of the month (`DD`).
+
+By default, files with the same name except for the time portion are combined into one
+output file per day in the same directory. For example:
+
+```
+VRS-EB81__202504250000.T04
+VRS-EB81__202504250800.T04
+VRS-EB81__202504251200.T04
+```
+
+become:
+
+```
+VRS-EB81__20250425.T04
+```
+
+Hourly (`YYYYMMDDHH`) files work the same way:
+
+```
+Cessnock-Base_2026092300.T04
+Cessnock-Base_2026092312.T04
+Cessnock-Base_2026092323.T04
+```
+
+become:
+
+```
+Cessnock-Base_20260923.T04
+```
+
+With `--CrossDay`, files are combined across days within the same month. The day and
+time determine sort order. For example:
+
+```
+VRS-EB81__202504250000.T04
+VRS-EB81__202504251200.T04
+VRS-EB81__202504260800.T04
+```
+
+become:
+
+```
+VRS-EB81__202504.T04
+```
+
+Single-file groups are also processed and written to the combined filename. The tool
+prints each group, the files being combined, and their order before writing output.
